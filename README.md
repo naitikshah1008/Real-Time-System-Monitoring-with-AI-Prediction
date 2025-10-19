@@ -252,4 +252,4 @@ Grafana Labs tutorials
 Confluent Schema Registry samples
 
 “Building reliable systems means understanding the data flowing through them.
-This project bridges the gap between monitoring, prediction, and intelligent automation.”
+This project bridges the gap between monitoring, prediction, and intelligent automation.”# Real-Time-System-Monitoring-with-AI-Prediction
