@@ -48,7 +48,7 @@ It demonstrates hands-on skills in **streaming data pipelines**, **distributed s
 3. Anomalies and metrics are inserted into TimescaleDB.
 4. Grafana visualizes real-time metrics and anomaly scores.
 
-![Grafana Dashboard](./grafana_dashboard.png)
+![Grafana Dashboard](./image2.png)
 
 ---
 
