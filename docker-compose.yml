@@ -11,18 +11,16 @@ services:
     image: confluentinc/cp-kafka:7.6.1
     depends_on:
       - zookeeper
-    ports:
-      - "9092:9092"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_INTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:29092"
     volumes:
       - kafka-data:/var/lib/kafka/data
 
@@ -52,6 +50,35 @@ services:
       - "3000:3000"
     depends_on:
       - postgres
+
+  producer:
+    build: ./producer
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BOOTSTRAP: "kafka:29092"
+      KAFKA_TOPIC: "metrics"
+
+  consumer:
+    build: ./consumer
+    depends_on:
+      - kafka
+      - postgres
+    environment:
+      KAFKA_BOOTSTRAP: "kafka:29092"
+      KAFKA_TOPIC: "metrics"
+      PG_DSN: "dbname=rtm user=rtm password=rtm host=postgres port=5432"
+
+  flink-job:
+    build: ./flink-job
+    depends_on:
+      - kafka
+      - postgres
+    environment:
+      KAFKA_BOOTSTRAP: "kafka:29092"
+      PG_URL: "jdbc:postgresql://postgres:5432/rtm"
+      PG_USER: "rtm"
+      PG_PASS: "rtm"
 
 volumes:
   pgdata:
