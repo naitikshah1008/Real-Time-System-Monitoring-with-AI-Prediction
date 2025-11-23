@@ -22,14 +22,14 @@ It demonstrates hands-on skills in **streaming data pipelines**, **distributed s
 
 | Layer | Technology | Purpose |
 |-------|-------------|----------|
-| **Ingestion** | 🐘 **Apache Kafka** | Message broker for streaming metrics |
-| **Coordination** | 🦓 **Zookeeper** | Kafka cluster coordination |
-| **Schema Management** | 📦 **Confluent Schema Registry (Avro)** | Enforce message consistency |
-| **Processing** | 🐍 **Apache PyFlink** | Real-time anomaly detection |
-| **Storage** | 🧱 **TimescaleDB (PostgreSQL)** | Time-series database for metrics |
-| **Visualization** | 📊 **Grafana** | Dashboard for real-time monitoring |
-| **Alerting (future)** | 🔔 **Slack / PagerDuty** | Incident alerts for detected anomalies |
-| **Containerization** | 🐳 **Docker & Docker Compose** | Local multi-service orchestration |
+| **Ingestion** |  **Apache Kafka** | Message broker for streaming metrics |
+| **Coordination** |  **Zookeeper** | Kafka cluster coordination |
+| **Schema Management** |  **Confluent Schema Registry (Avro)** | Enforce message consistency |
+| **Processing** |  **Apache PyFlink** | Real-time anomaly detection |
+| **Storage** |  **TimescaleDB (PostgreSQL)** | Time-series database for metrics |
+| **Visualization** |  **Grafana** | Dashboard for real-time monitoring |
+| **Alerting (future)** |  **Slack / PagerDuty** | Incident alerts for detected anomalies |
+| **Containerization** |  **Docker & Docker Compose** | Local multi-service orchestration |
 
 ---
 
