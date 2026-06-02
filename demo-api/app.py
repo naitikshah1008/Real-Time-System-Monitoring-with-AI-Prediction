@@ -343,6 +343,7 @@ def pipeline_status():
 def config():
     return {
         "grafana_url": PUBLIC_GRAFANA_URL or None,
+        "incident_cooldown_seconds": INCIDENT_MIN_INTERVAL_SECONDS,
     }
 
 

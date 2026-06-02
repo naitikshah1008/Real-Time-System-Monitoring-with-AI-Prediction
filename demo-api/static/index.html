@@ -386,8 +386,8 @@
       }
 
       button:disabled {
-        cursor: wait;
-        opacity: 0.65;
+        cursor: not-allowed;
+        opacity: 0.7;
       }
 
       .segment-button {
@@ -407,6 +407,15 @@
         accent-color: var(--blue);
       }
 
+      .range-labels {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: -5px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
       .incident-button {
         display: grid;
         gap: 4px;
@@ -419,6 +428,7 @@
       .incident-button.active {
         border-color: var(--yellow);
         border-left-color: var(--incident-accent, var(--yellow));
+        background: #243640;
       }
 
       .incident-button[data-type="cpu_spike"] {
@@ -451,6 +461,35 @@
       .last-action {
         color: var(--muted);
         font-size: 12px;
+      }
+
+      .action-status {
+        min-height: 24px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: #263238;
+        color: #cfe3ea;
+        font-weight: 700;
+      }
+
+      .action-status.success {
+        background: #1f3c2d;
+        color: #bdeed1;
+      }
+
+      .action-status.warning {
+        background: #604516;
+        color: #ffe1a3;
+      }
+
+      .action-status.error {
+        background: #5b1f2a;
+        color: #ffd6dd;
+      }
+
+      .action-status.working {
+        background: #1e3a49;
+        color: #cdefff;
       }
 
       .active-incidents {
@@ -768,13 +807,13 @@
     </header>
 
     <main>
-      <section class="panel pipeline-overview" id="pipeline-overview">
+      <section class="panel pipeline-overview collapsed" id="pipeline-overview">
         <div class="pipeline-summary">
           <div class="pipeline-summary-copy">
             <h2>Live Pipeline Health</h2>
             <p class="pipeline-summary-text" id="pipeline-summary-text">Checking service connections...</p>
           </div>
-          <button class="secondary-button" id="pipeline-toggle" type="button">Hide checks</button>
+          <button class="secondary-button" id="pipeline-toggle" type="button">Show checks</button>
         </div>
         <div class="pipeline-strip" id="pipeline-status"></div>
       </section>
@@ -783,8 +822,8 @@
         <div class="sidebar">
           <aside class="panel">
             <div class="panel-header">
-              <h2>Incident Simulator</h2>
-              <span class="last-action" id="last-action">Ready</span>
+              <h2>Start Simulation</h2>
+              <span class="last-action action-status" id="last-action">Ready</span>
             </div>
             <div class="panel-body">
               <div class="control-settings">
@@ -804,7 +843,11 @@
                     <span>Intensity</span>
                     <span id="intensity-label">1.0x</span>
                   </label>
-                  <input id="intensity" type="range" min="0.5" max="1.5" step="0.1" value="1.0" />
+                  <input id="intensity" type="range" min="0.5" max="1.0" step="0.1" value="1.0" />
+                  <div class="range-labels">
+                    <span>Low</span>
+                    <span>High</span>
+                  </div>
                 </div>
               </div>
 
@@ -857,7 +900,7 @@
         <div class="right-column">
           <section class="panel">
             <div class="panel-header">
-              <h2>Current System State</h2>
+              <h2>System State</h2>
               <span class="badge" id="scenario-badge">Unknown</span>
             </div>
             <div class="panel-body">
@@ -890,7 +933,7 @@
           <div class="table-grid">
             <section class="panel">
               <div class="panel-header">
-                <h2>Latest Metrics</h2>
+                <h2>Recent Metrics</h2>
                 <a href="#" target="_blank" rel="noreferrer" data-grafana-link hidden>Grafana</a>
               </div>
               <div class="table-wrap">
@@ -913,7 +956,7 @@
 
             <section class="panel">
               <div class="panel-header">
-                <h2>Latest Anomalies</h2>
+                <h2>Recent Anomalies</h2>
               </div>
               <div class="table-wrap">
                 <table>
@@ -958,6 +1001,7 @@
       const durationButtons = document.querySelectorAll("button[data-duration]");
       const intensityInput = document.querySelector("#intensity");
       const intensityLabel = document.querySelector("#intensity-label");
+      const incidentButtons = document.querySelectorAll("button[data-type]");
       const activeCount = document.querySelector("#active-count");
       const activeIncidentsList = document.querySelector("#active-incidents");
       const pipelineInspectorBadge = document.querySelector("#pipeline-inspector-badge");
@@ -971,6 +1015,12 @@
         memory_leak: "Memory Leak",
         disk_pressure: "Disk Pressure",
         network_burst: "Network Burst",
+      };
+      const incidentDescriptions = {
+        cpu_spike: "Raise compute demand on the demo host.",
+        memory_leak: "Increase memory pressure over time.",
+        disk_pressure: "Push disk utilization toward saturation.",
+        network_burst: "Generate a burst of network traffic.",
       };
       const scenarioLabels = {
         cpu_spike: "CPU Spike",
@@ -1004,9 +1054,12 @@
       let activeIncidents = loadStoredIncidents();
       let latestPipelineStatus = null;
       let selectedPipelineKey = "telemetry";
-      let pipelineExpanded = true;
+      let pipelineExpanded = false;
       let latestAnomalyRows = [];
       let selectedAnomalyEventId = null;
+      let incidentCooldownSeconds = 3;
+      let nextIncidentAt = 0;
+      let incidentRequestInFlight = false;
 
       function escapeHtml(value) {
         return String(value ?? "").replace(/[&<>"']/g, (char) => {
@@ -1085,6 +1138,7 @@
           }
           const error = new Error(message);
           error.status = response.status;
+          error.retryAfter = Number(response.headers.get("Retry-After") || 0);
           throw error;
         }
         return response.json();
@@ -1094,6 +1148,7 @@
         try {
           const config = await fetchJson("/api/config");
           const grafanaUrl = config.grafana_url;
+          incidentCooldownSeconds = Number(config.incident_cooldown_seconds || incidentCooldownSeconds);
           grafanaLinks.forEach((link) => {
             if (!grafanaUrl) {
               link.hidden = true;
@@ -1123,6 +1178,40 @@
         pipelineExpanded = expanded;
         pipelineOverview.classList.toggle("collapsed", !pipelineExpanded);
         pipelineToggle.textContent = pipelineExpanded ? "Hide checks" : "Show checks";
+      }
+
+      function setActionStatus(message, state = "") {
+        lastAction.textContent = message;
+        lastAction.className = `last-action action-status${state ? ` ${state}` : ""}`;
+      }
+
+      function remainingIncidentCooldown() {
+        return Math.max(0, Math.ceil((nextIncidentAt - Date.now()) / 1000));
+      }
+
+      function startIncidentCooldown(seconds) {
+        nextIncidentAt = Date.now() + Math.max(0, Number(seconds || 0)) * 1000;
+        updateIncidentControls();
+      }
+
+      function updateIncidentControls() {
+        const cooldown = remainingIncidentCooldown();
+        const disabled = incidentRequestInFlight || cooldown > 0;
+        incidentButtons.forEach((button) => {
+          button.disabled = disabled;
+        });
+
+        if (incidentRequestInFlight) {
+          setActionStatus("Sending", "working");
+          return;
+        }
+        if (cooldown > 0) {
+          setActionStatus(`Ready in ${cooldown}s`, "warning");
+          return;
+        }
+        if (lastAction.classList.contains("warning") || lastAction.classList.contains("working")) {
+          setActionStatus("Ready");
+        }
       }
 
       function updatePipelineSummary(data) {
@@ -1393,9 +1482,17 @@
         activeIncidents = activeIncidents.filter((incident) => incident.expiresAt > now);
         storeActiveIncidents();
         activeCount.textContent = String(activeIncidents.length);
-        document.querySelectorAll("button[data-type]").forEach((button) => {
-          button.classList.toggle("active", activeIncidents.some((incident) => incident.type === button.dataset.type));
+        incidentButtons.forEach((button) => {
+          const activeIncident = activeIncidents.find((incident) => incident.type === button.dataset.type);
+          button.classList.toggle("active", Boolean(activeIncident));
+          const meta = button.querySelector(".button-meta");
+          if (meta) {
+            meta.textContent = activeIncident
+              ? `Running - ${formatSeconds(activeIncident.expiresAt - now)} left`
+              : incidentDescriptions[button.dataset.type];
+          }
         });
+        updateIncidentControls();
 
         if (!activeIncidents.length) {
           activeIncidentsList.innerHTML = `<p class="empty-row">No active simulations</p>`;
@@ -1422,11 +1519,17 @@
         await Promise.allSettled([loadHealth(), loadSummary(), loadMetrics(), loadAnomalies()]);
       }
 
-      document.querySelectorAll("button[data-type]").forEach((button) => {
+      incidentButtons.forEach((button) => {
         button.addEventListener("click", async () => {
           const type = button.dataset.type;
-          button.disabled = true;
-          lastAction.textContent = "Sending";
+          const cooldown = remainingIncidentCooldown();
+          if (cooldown > 0) {
+            setActionStatus(`Ready in ${cooldown}s`, "warning");
+            return;
+          }
+
+          incidentRequestInFlight = true;
+          updateIncidentControls();
           try {
             const command = await fetchJson("/api/incidents", {
               method: "POST",
@@ -1439,12 +1542,19 @@
               }),
             });
             trackIncident(command);
-            lastAction.textContent = `${incidentLabels[type]} sent`;
+            setActionStatus(`${incidentLabels[type]} sent`, "success");
+            startIncidentCooldown(incidentCooldownSeconds);
             await refresh();
           } catch (error) {
-            lastAction.textContent = error.status === 429 ? error.message : "Request failed";
+            if (error.status === 429) {
+              setActionStatus(error.message, "warning");
+              startIncidentCooldown(error.retryAfter || incidentCooldownSeconds);
+            } else {
+              setActionStatus("Request failed", "error");
+            }
           } finally {
-            button.disabled = false;
+            incidentRequestInFlight = false;
+            updateIncidentControls();
           }
         });
       });
@@ -1477,7 +1587,7 @@
 
       updateDuration(selectedDuration);
       updateIntensity(selectedIntensity);
-      setPipelineExpanded(true);
+      setPipelineExpanded(false);
       renderActiveIncidents();
       loadConfig();
       refresh();
