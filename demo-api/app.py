@@ -21,6 +21,7 @@ from pipeline_status import component
 from pipeline_status import describe_age
 from pipeline_status import serialize_datetime
 from pipeline_status import status_rollup
+from rate_limit import IncidentRateLimiter
 
 
 KAFKA_BROKER = os.getenv("KAFKA_BROKER", "kafka:9092")
@@ -30,6 +31,9 @@ GRAFANA_URL = os.getenv("GRAFANA_URL", "http://grafana:3000")
 PUBLIC_GRAFANA_URL = os.getenv("PUBLIC_GRAFANA_URL", "http://localhost:3000").strip()
 FLINK_HEALTH_URL = os.getenv("FLINK_HEALTH_URL", "http://stream-processor:8090/health")
 FRESH_METRIC_SECONDS = int(os.getenv("FRESH_METRIC_SECONDS", "60"))
+INCIDENT_MIN_INTERVAL_SECONDS = float(os.getenv("INCIDENT_MIN_INTERVAL_SECONDS", "3"))
+INCIDENT_RATE_LIMIT_WINDOW_SECONDS = float(os.getenv("INCIDENT_RATE_LIMIT_WINDOW_SECONDS", "60"))
+INCIDENT_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("INCIDENT_RATE_LIMIT_MAX_REQUESTS", "12"))
 PG_HOST = os.getenv("PG_HOST", "postgres")
 PG_DB = os.getenv("PG_DB", "rtm")
 PG_USER = os.getenv("PG_USER", "rtm")
@@ -51,6 +55,11 @@ app.add_middleware(
 )
 
 producer = None
+incident_rate_limiter = IncidentRateLimiter(
+    min_interval_seconds=INCIDENT_MIN_INTERVAL_SECONDS,
+    window_seconds=INCIDENT_RATE_LIMIT_WINDOW_SECONDS,
+    max_requests=INCIDENT_RATE_LIMIT_MAX_REQUESTS,
+)
 
 
 def get_db_connection():
@@ -365,10 +374,21 @@ def summary():
 def create_incident(payload: dict):
     try:
         command = build_incident_command(payload)
-        get_producer().send(INCIDENT_TOPIC, command).get(timeout=10)
-        return command
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+    allowed, retry_after = incident_rate_limiter.check()
+    if not allowed:
+        retry_label = f"{retry_after}s" if retry_after < 60 else f"{retry_after // 60}m"
+        raise HTTPException(
+            status_code=429,
+            detail=f"Please wait before starting another simulation. Try again in {retry_label}.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    try:
+        get_producer().send(INCIDENT_TOPIC, command).get(timeout=10)
+        return command
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Failed to publish incident: {e}") from e
 
